@@ -89,6 +89,79 @@ int transfer_functions_at_q(
   return _SUCCESS_;
 }
 
+int transfer_dodgy_output(
+			  struct transfers * ptr,
+			  struct perturbs * ppt
+			  ) {
+  /** This is a bit of a dirty hack to get the transfer functions out of class
+      Introduced by JS on 09/03/21 
+      The function is called at the end of transfer_init 
+  **/
+  double tk_at_q_t0, tk_at_q_t1, tk_at_q_t2;
+  double current_q;
+  int status;
+  FILE *fp;
+
+  // Open file for output and write the l-values used in the following
+  // Unfortunately we don't have pop->root not available here so we just hardcode the output location and filename
+  fp = fopen("./transfer.dat", "w+");
+  // Then we write all l-values for which we printed the transfere function to the file
+  fprintf(fp, "# 1st line contains the l-values for which transfere functions where computed.\n");
+  fprintf(fp, "# All following line start with the value of k and the give the transfer function for the l-values listed above.\n");
+  for (int ll=0; ll<ptr->l_size[ppt->index_md_scalars]; ll++){
+    fprintf(fp, "%d ", ptr->l[ll]);
+  }
+  fprintf(fp, "\n");
+  
+  
+  // Loop over all wavenumbers for which we request a transfere function.
+  // Here we cannibalize k_output_values (c.f. explanatory.ini) which actually is intended to track the time evolution of specific modes
+  // We should check if this slows down CLASS unnecessarily and if so introduce our own input parameter for the requested wavenumbers.
+  for (int kk=0; kk<ppt->k_output_values_num; kk++){
+    current_q = ppt->k_output_values[kk];
+
+    //Write the q-value to file
+    fprintf(fp, "%e ", current_q);
+
+    // For each mode we now loop over the multipoles.
+    for (int ll=0; ll<ptr->l_size[ppt->index_md_scalars]; ll++){
+     
+
+      // Class decomposes the temperature transfere function into three parts or source terms (check line of sigt approximation or LOS for more
+      // details). For the scalar TT Cls we have to add all three, see also spectra.c, line ~948.
+      status = transfer_functions_at_q(ptr,
+				       ppt->index_md_scalars,  //int index_md (selects from scalar, vector, tensor; we want scalar)
+				       ppt->index_ic_ad,       //int index_ic (select the type of initial conditions; we want adiabatic)
+				       ptr->index_tt_t0,       //int index_tt
+				       ll,                     //int index l
+				       current_q,              //double q, I think units are 1/Mpc, but confirm
+				       &tk_at_q_t0
+				       );
+      status = transfer_functions_at_q(ptr,
+				       ppt->index_md_scalars,  
+				       ppt->index_ic_ad,       
+				       ptr->index_tt_t1,       
+				       ll,                     
+				       current_q,                   
+				       &tk_at_q_t1
+				       );
+      status = transfer_functions_at_q(ptr,
+				       ppt->index_md_scalars,  
+				       ppt->index_ic_ad,       
+				       ptr->index_tt_t2,       
+				       ll,                     
+				       current_q,                   
+				       &tk_at_q_t2
+				       );
+      // Write the transfer function we found to file
+      fprintf(fp, "%e ", tk_at_q_t0+tk_at_q_t1+tk_at_q_t2);
+    }
+    fprintf(fp, "\n");
+  }
+  fclose(fp);
+  return _SUCCESS_;
+};
+
 /**
  * This routine initializes the transfers structure, (in particular,
  * computes table of transfer functions \f$ \Delta_l^{X} (q) \f$)
@@ -417,9 +490,15 @@ int transfer_init(
   class_call(hyperspherical_HIS_free(&BIS,ptr->error_message),
              ptr->error_message,
              ptr->error_message);
+
+  class_call(transfer_dodgy_output(ptr, ppt),
+	     ptr->error_message,
+	     ptr->error_message);
+  
   return _SUCCESS_;
 }
 
+  
 /**
  * This routine frees all the memory space allocated by transfer_init().
  *
