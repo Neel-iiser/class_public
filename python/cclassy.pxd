@@ -168,6 +168,77 @@ cdef extern from "class.h":
 
     cdef struct transfers:
         ErrorMsg error_message
+        double lcmb_rescale
+        double lcmb_tilt
+        double lcmb_pivot
+        #double selection_bias[_SELECTION_NUM_MAX_]
+        #double selection_magnification_bias[_SELECTION_NUM_MAX_]
+        short has_nz_file
+        short has_nz_analytic
+        FileName nz_file_name
+        int nz_size
+        double * nz_z
+        double * nz_nz
+        double * nz_ddnz
+        short has_nz_evo_file
+        short has_nz_evo_analytic
+        FileName nz_evo_file_name
+        int nz_evo_size
+        double * nz_evo_z
+        double * nz_evo_nz
+        double * nz_evo_dlog_nz
+        double * nz_evo_dd_dlog_nz
+        short has_cls
+        int md_size
+        int index_tt_t0
+        int index_tt_t1
+        int index_tt_t2
+        int index_tt_e
+        int index_tt_b
+        int index_tt_lcmb
+        int index_tt_density
+        int index_tt_lensing
+        int index_tt_rsd
+        int index_tt_d0
+        int index_tt_d1
+        int index_tt_nc_lens
+        int index_tt_nc_g1
+        int index_tt_nc_g2
+        int index_tt_nc_g3
+        int index_tt_nc_g4
+        int index_tt_nc_g5
+        int * tt_size
+        int * l_size_tt
+        int * l_size
+        int * l_size_max
+        int * l
+        double angular_rescaling
+        size_t q_size
+        double * q
+        double ** k
+        int index_q_flat_approximation
+        double ** transfer
+        short initialise_HIS_cache
+        short transfer_verbose
+        
+    cdef struct transfer_workspace:
+        #HyperInterpStruct HIS
+        #int HIS_allocated
+        #HyperInterpStruct * pBIS
+        int l_size
+        int tau_size
+        int tau_size_max
+        double * interpolated_sources
+        double * sources
+        double * tau0_minus_tau
+        double * w_trapz
+        double * chi
+        double * cscKgen
+        double * cotKgen
+        double K
+        int sgnK
+        double tau0_minus_tau_cut
+        short neglect_late_source
 
     cdef struct primordial:
         ErrorMsg error_message
@@ -459,3 +530,5 @@ cdef extern from "class.h":
                   double * pk_tot_out,
                   double * pk_cb_tot_out,
                   int nonlinear)
+                  
+    int transfer_dodgy_output(void * ptr, void * ppt)
