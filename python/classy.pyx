@@ -2118,3 +2118,7 @@ make        nonlinear_scale_cb(z, z_size)
 
     def Omega0_cdm(self):
         return self.ba.Omega0_cdm
+        
+    def transfertest(self):
+        transfer_dodgy_output(&self.tr, &self.pt)
+        return 0
