@@ -8,6 +8,8 @@
 #include <sys/shm.h>
 #include <sys/stat.h>
 #include "errno.h"
+//below line is experimental
+#include "primordial.h"
 
 /* macro: test if index_tt is in the range between index and index+num, while the flag is true */
 #define _index_tt_in_range_(index,num,flag) (flag == _TRUE_) && (index_tt >= index) && (index_tt < index+num)
@@ -316,7 +318,8 @@ extern "C" {
                     struct thermo * pth,
                     struct perturbs * ppt,
                     struct nonlinear * pnl,
-                    struct transfers * ptr
+                    struct transfers * ptr,
+                    struct primordial * ppm
                     );
 
   int transfer_free(
@@ -729,6 +732,12 @@ extern "C" {
                    double cotKgen,
                    double* f_evo
                   );
+
+  int extks_dodgy_transfers(
+                            struct perturbs * ppt,
+                            struct primordial * ppm,
+                            struct transfers * ptr
+                            );
 
 #ifdef __cplusplus
 }
