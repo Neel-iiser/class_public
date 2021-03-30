@@ -3793,7 +3793,7 @@ int input_try_unknown_parameters(double * unknown_parameter,
     if (input_verbose>2)
       printf("Stage 6: transfer\n");
     tr.transfer_verbose = 0;
-    class_call_except(transfer_init(&pr,&ba,&th,&pt,&nl,&tr),
+    class_call_except(transfer_init(&pr,&ba,&th,&pt,&nl,&tr,&pm),
                       tr.error_message,
                       errmsg,
                       nonlinear_free(&nl);primordial_free(&pm);perturb_free(&pt);thermodynamics_free(&th);background_free(&ba)
