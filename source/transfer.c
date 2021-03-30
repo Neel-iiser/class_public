@@ -89,6 +89,230 @@ int transfer_functions_at_q(
   return _SUCCESS_;
 }
 
+int extks_dodgy_transfers(
+                                      struct perturbs * ppt,
+                                      struct primordial * ppm,
+                                      struct transfers * ptr
+                                      ) {
+  /** Summary: */
+
+  char arguments[_ARGUMENT_LENGTH_MAX_];
+  char line[_LINE_LENGTH_MAX_];
+  char command_with_arguments[2*_ARGUMENT_LENGTH_MAX_];
+  FILE *process;
+  int n_data_guess, n_data = 0;
+  double *k = NULL, *pks = NULL, *pkt = NULL, *tmp = NULL;
+  double this_k, this_pks, this_pkt;
+  int status;
+  int index_k;
+
+  /** - Initialization */
+  /* Prepare the data (with some initial size) */
+  n_data_guess = 100;
+  k   = (double *)malloc(n_data_guess*sizeof(double));
+  pks = (double *)malloc(n_data_guess*sizeof(double));
+  if (ppt->has_tensors == _TRUE_)
+    pkt = (double *)malloc(n_data_guess*sizeof(double));
+  /* Prepare the command */
+  /* If the command is just a "cat", no arguments need to be passed */
+  if(strncmp("cat ", ppm->command, 4) == 0) {
+    sprintf(arguments, " ");
+  }
+  /* otherwise pass the list of arguments */
+  else {
+    sprintf(arguments, " %g %g %g %g %g %g %g %g %g %g",
+            ppm->custom1, ppm->custom2, ppm->custom3, ppm->custom4, ppm->custom5,
+            ppm->custom6, ppm->custom7, ppm->custom8, ppm->custom9, ppm->custom10);
+  }
+  /* write the actual command in a string */
+  sprintf(command_with_arguments, "%s %s", ppm->command, arguments);
+  if (ppm->primordial_verbose > 0)
+    printf(" -> running: %s\n",command_with_arguments);
+
+  /** - Launch the command and retrieve the output */
+  /* Launch the process */
+  process = popen(command_with_arguments, "r");
+  class_test(process == NULL,
+             ppm->error_message,
+             "The program failed to set the environment for the external command. Maybe you ran out of memory.");
+  /* Read output and store it */
+  while (fgets(line, sizeof(line)-1, process) != NULL) {
+    if (ppt->has_tensors == _TRUE_) {
+      sscanf(line, "%lf %lf %lf", &this_k, &this_pks, &this_pkt);
+    }
+    else {
+      sscanf(line, "%lf %lf", &this_k, &this_pks);
+    }
+    /* Standard technique in C: if too many data, double the size of the vectors */
+    /* (it is faster and safer that reallocating every new line) */
+    if((n_data+1) > n_data_guess) {
+      n_data_guess *= 2;
+      tmp = (double *)realloc(k,   n_data_guess*sizeof(double));
+      class_test(tmp == NULL,
+                 ppm->error_message,
+                 "Error allocating memory to read the external spectrum.\n");
+      k = tmp;
+      tmp = (double *)realloc(pks, n_data_guess*sizeof(double));
+      class_test(tmp == NULL,
+                 ppm->error_message,
+                 "Error allocating memory to read the external spectrum.\n");
+      pks = tmp;
+      if (ppt->has_tensors == _TRUE_) {
+        tmp = (double *)realloc(pkt, n_data_guess*sizeof(double));
+        class_test(tmp == NULL,
+                   ppm->error_message,
+                   "Error allocating memory to read the external spectrum.\n");
+        pkt = tmp;
+      };
+    };
+    /* Store */
+    k  [n_data]   = this_k;
+    pks[n_data]   = this_pks;
+    if (ppt->has_tensors == _TRUE_) {
+      pkt[n_data] = this_pkt;
+    }
+    n_data++;
+    /* Check ascending order of the k's */
+    if(n_data>1) {
+      class_test(k[n_data-1] <= k[n_data-2],
+                 ppm->error_message,
+                 "The k's are not strictly sorted in ascending order, "
+                 "as it is required for the calculation of the splines.\n");
+    }
+  }
+  /* Close the process */
+  status = pclose(process);
+  class_test(status != 0.,
+             ppm->error_message,
+             "The attempt to launch the external command was unsuccessful. "
+             "Try doing it by hand to check for errors.");
+  /* Test limits of the k's */
+  class_test(k[1] > ppt->k_min,
+             ppm->error_message,
+             "Your table for the primordial spectrum does not have "
+             "at least 2 points before the minimum value of k: %e . "
+             "The splines interpolation would not be safe.",ppt->k_min);
+  class_test(k[n_data-2] < ppt->k_max,
+             ppm->error_message,
+             "Your table for the primordial spectrum does not have "
+             "at least 2 points after the maximum value of k: %e . "
+             "The splines interpolation would not be safe.",ppt->k_max);
+
+  /** - Store the read results into CLASS structures */
+  ppm->lnk_size = n_data;
+  /** - Make room */
+  class_realloc(ppm->lnk,
+                ppm->lnk,
+                ppm->lnk_size*sizeof(double),
+                ppm->error_message);
+  class_realloc(ppm->lnpk[ppt->index_md_scalars],
+                ppm->lnpk[ppt->index_md_scalars],
+                ppm->lnk_size*sizeof(double),
+                ppm->error_message);
+  class_realloc(ppm->ddlnpk[ppt->index_md_scalars],
+                ppm->ddlnpk[ppt->index_md_scalars],
+                ppm->lnk_size*sizeof(double),
+                ppm->error_message);
+  if (ppt->has_tensors == _TRUE_) {
+    class_realloc(ppm->lnpk[ppt->index_md_tensors],
+                  ppm->lnpk[ppt->index_md_tensors],
+                  ppm->lnk_size*sizeof(double),
+                  ppm->error_message);
+    class_realloc(ppm->ddlnpk[ppt->index_md_tensors],
+                  ppm->ddlnpk[ppt->index_md_tensors],
+                  ppm->lnk_size*sizeof(double),
+                  ppm->error_message);
+  };
+  /** - Store values */
+  for (index_k=0; index_k<ppm->lnk_size; index_k++) {
+    ppm->lnk[index_k] = log(k[index_k]);
+    ppm->lnpk[ppt->index_md_scalars][index_k] = log(pks[index_k]);
+    if (ppt->has_tensors == _TRUE_)
+      ppm->lnpk[ppt->index_md_tensors][index_k] = log(pkt[index_k]);
+    /* DEBUG (with tensors)
+       fprintf(stderr,"Storing[%d(+1) of %d]: \n k = %g == %g\n pks = %g == %g\n pkt = %g == %g\n",
+       index_k, n_data,
+       ppm->lnk[index_k], log(k[index_k]),
+       ppm->lnpk[ppt->index_md_scalars][index_k], log(pks[index_k]),
+       ppm->lnpk[ppt->index_md_tensors][index_k], log(pkt[index_k]));
+    */
+  };
+  // Trying to print transfer functions for external spectrum's k values using the same method as transfer_dodgy_output
+  double tk_at_q_t0, tk_at_q_t1, tk_at_q_t2;
+  double current_q;
+  int status2;
+  FILE *fp;
+
+  // Open file for output and write the l-values used in the following
+  // Unfortunately we don't have pop->root not available here so we just hardcode the output location and filename
+  fp = fopen("./transferext.dat", "w+");
+  // Then we write all l-values for which we printed the transfere function to the file
+  fprintf(fp, "# 1st line contains the l-values for which transfere functions where computed.\n");
+  fprintf(fp, "# All following line start with the value of k and the give the transfer function for the l-values listed above.\n");
+  for (int ll=0; ll<ptr->l_size[ppt->index_md_scalars]; ll++){
+    fprintf(fp, "%d ", ptr->l[ll]);
+  }
+  fprintf(fp, "\n");
+  
+  
+  // Loop over all wavenumbers for which we request a transfere function.
+  // Here we cannibalize k_output_values (c.f. explanatory.ini) which actually is intended to track the time evolution of specific modes
+  // We should check if this slows down CLASS unnecessarily and if so introduce our own input parameter for the requested wavenumbers.
+  for (int index_q=0; index_q<n_data; index_q++){
+    current_q = k[index_q];
+
+    //Write the q-value to file
+    fprintf(fp, "k=%e: ", current_q);
+
+    // For each mode we now loop over the multipoles.
+    for (int ll=0; ll<ptr->l_size[ppt->index_md_scalars]; ll++){
+     
+
+      // Class decomposes the temperature transfere function into three parts or source terms (check line of sigt approximation or LOS for more
+      // details). For the scalar TT Cls we have to add all three, see also spectra.c, line ~948.
+      status2 = transfer_functions_at_q(ptr,
+				       ppt->index_md_scalars,  //int index_md (selects from scalar, vector, tensor; we want scalar)
+				       ppt->index_ic_ad,       //int index_ic (select the type of initial conditions; we want adiabatic)
+				       ptr->index_tt_t0,       //int index_tt
+				       ll,                     //int index l
+				       current_q,              //double q, I think units are 1/Mpc, but confirm
+				       &tk_at_q_t0
+				       );
+      status2 = transfer_functions_at_q(ptr,
+				       ppt->index_md_scalars,  
+				       ppt->index_ic_ad,       
+				       ptr->index_tt_t1,       
+				       ll,                     
+				       current_q,                   
+				       &tk_at_q_t1
+				       );
+      status2 = transfer_functions_at_q(ptr,
+				       ppt->index_md_scalars,  
+				       ppt->index_ic_ad,       
+				       ptr->index_tt_t2,       
+				       ll,                     
+				       current_q,                   
+				       &tk_at_q_t2
+				       );
+      // Write the transfer function we found to file
+      fprintf(fp, "%e ", tk_at_q_t0+tk_at_q_t1+tk_at_q_t2);
+    }
+    fprintf(fp, "\n");
+  }
+  fclose(fp);
+  /** - Release the memory used locally */
+  free(k);
+  free(pks);
+  if (ppt->has_tensors == _TRUE_)
+    free(pkt);
+  /** - Tell CLASS that there are scalar (and tensor) modes */
+  ppm->is_non_zero[ppt->index_md_scalars][ppt->index_ic_ad] = _TRUE_;
+  if (ppt->has_tensors == _TRUE_)
+    ppm->is_non_zero[ppt->index_md_tensors][ppt->index_ic_ten] = _TRUE_;
+
+  return _SUCCESS_;
+}
+
 int transfer_dodgy_output(
 			  struct transfers * ptr,
 			  struct perturbs * ppt
@@ -117,11 +341,11 @@ int transfer_dodgy_output(
   // Loop over all wavenumbers for which we request a transfere function.
   // Here we cannibalize k_output_values (c.f. explanatory.ini) which actually is intended to track the time evolution of specific modes
   // We should check if this slows down CLASS unnecessarily and if so introduce our own input parameter for the requested wavenumbers.
-  for (int kk=0; kk<ppt->k_output_values_num; kk++){
-    current_q = ppt->k_output_values[kk];
+  for (int index_q=0; index_q<ptr->q_size; index_q++){
+    current_q = ptr->q[index_q];
 
     //Write the q-value to file
-    fprintf(fp, "%e ", current_q);
+    fprintf(fp, "q=%e: ", current_q);
 
     // For each mode we now loop over the multipoles.
     for (int ll=0; ll<ptr->l_size[ppt->index_md_scalars]; ll++){
@@ -191,7 +415,8 @@ int transfer_init(
                   struct thermo * pth,
                   struct perturbs * ppt,
                   struct nonlinear * pnl,
-                  struct transfers * ptr
+                  struct transfers * ptr,
+                  struct primordial * ppm
                   ) {
 
   /** Summary: */
@@ -494,6 +719,10 @@ int transfer_init(
   class_call(transfer_dodgy_output(ptr, ppt),
 	     ptr->error_message,
 	     ptr->error_message);
+
+  class_call(extks_dodgy_transfers(ppt, ppm, ptr),
+             ptr->error_message,
+             ptr->error_message);
   
   return _SUCCESS_;
 }
@@ -675,7 +904,7 @@ int transfer_indices(
 
   /* for testing, it can be useful to print the q list in a file: */
 
-  /*
+  
     FILE * out=fopen("output/q","w");
     int index_q;
 
@@ -691,7 +920,7 @@ int transfer_indices(
     }
 
     fclose(out);
-  */
+  
 
   /** - get l values using transfer_get_l_list() */
   class_call(transfer_get_l_list(ppr,ppt,ptr),
